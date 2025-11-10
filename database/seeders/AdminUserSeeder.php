@@ -17,10 +17,10 @@ class AdminUserSeeder extends Seeder
         User::create([
             'name' => 'Resolute_Admin',
             'email' => $email,
-            'password' => bcrypt(value: 'aliceSecret'), // change after first login
+            'password' => bcrypt(value: 'amazingGrace'),
             'is_admin' => true,
         ]);
 
-        $this->command->info("Created admin: {$email} / aliceSecret");
+        $this->command->info("Created admin: {$email} / amazingGrace");
     }
 }
