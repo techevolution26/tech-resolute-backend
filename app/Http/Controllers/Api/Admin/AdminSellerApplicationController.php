@@ -33,103 +33,87 @@ class AdminSellerApplicationController extends Controller
 
     public function approve(Request $request, $id)
     {
-        $request->validate([
-            'notes' => 'nullable|string|max:2000',
-            'notify_email' => 'sometimes|boolean',
-            'create_user' => 'sometimes|boolean'
-        ]);
-
-        $notify = (bool) $request->input('notify_email', true);
-        $notes = $request->input('notes', null);
-        $createUser = (bool) $request->input('create_user', true);
-
-        $application = SellerApplication::find($id);
-        if (! $application) {
-            return response()->json(['message' => "Seller application not found: {$id}"], 404);
+        $app = SellerApplication::find($id);
+        if (!$app) {
+            return response()->json(['message' => 'Application not found'], 404);
         }
 
-        if ($application->status === 'approved') {
-            return response()->json(['message' => 'Application already approved', 'application' => $application], 400);
+        if ($app->status === 'approved') {
+            return response()->json(['message' => 'Already approved'], 400);
         }
 
-        DB::beginTransaction();
-        $createdUser = null;
-        try {
-            $seller = Seller::create([
-                'business_name' => $application->business_name,
-                'contact_name'  => $application->contact_name,
-                // map email field consistently
-                'contact_email' => $application->email ?? $application->contact_email ?? null,
-                'phone'         => $application->phone,
-                'website'       => $application->website,
-                // use logo_url (migration)
-                'logo_path'     => $application->logo_url ?? $application->logo_path ?? null,
-                'message'       => $application->message,
-                'approved'      => true,
-                'notes'         => $notes,
+        // decide seller_type: keep what applicant requested, default 'one_time'
+        $sellerType = $app->application_type ?? 'one_time';
+
+        // create or find user by email
+        if (!$app->email) {
+            return response()->json(['message' => 'Application missing email'], 422);
+        }
+
+        $user = User::where('email', $app->email)->first();
+
+        if (!$user) {
+            // Create a new user with a random password (they will set with the link)
+            $user = User::create([
+                'name' => $app->contact_name,
+                'email' => $app->email,
+                // temporary password (we don't expose) - will be overridden by reset flow
+                'password' => \Illuminate\Support\Facades\Hash::make(Str::random(24)),
+                'is_seller' => true,
+                'seller_type' => $sellerType,
+                'seller_application_id' => $app->id,
             ]);
-
-            if ($createUser && !empty($application->email)) {
-                $user = User::where('email', $application->email)->first();
-                if (! $user) {
-                    $tempPassword = Str::random(12);
-                    $user = User::create([
-                        'name' => $application->contact_name ?: $application->business_name,
-                        'email' => $application->email,
-                        'password' => bcrypt($tempPassword),
-                        'is_seller' => true,
-                    ]);
-                    $createdUser = $user;
-                }
-
-                if (Schema::hasColumn('sellers', 'user_id')) {
-                    $seller->user_id = $user->id;
-                    $seller->save();
-                }
-
-                // non-blocking password reset email
-                try {
-                    Password::sendResetLink(['email' => $user->email]);
-                } catch (\Throwable $e) {
-                    Log::error('Failed to send password reset to seller user: '.$e->getMessage());
-                }
-            }
-
-            $application->status = 'approved';
-            $application->notes = $notes;
-            $application->approved_at = now();
-            $application->save();
-
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            Log::error('Approve application failed: '.$e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to approve application'], 500);
+        } else {
+            // Existing user: mark as seller
+            $user->update([
+                'is_seller' => true,
+                'seller_type' => $sellerType,
+                'seller_application_id' => $app->id,
+            ]);
         }
 
-        if ($notify && !empty($seller->contact_email)) {
-            try {
-                Mail::to($seller->contact_email)->queue(new SellerApprovedMail($seller, $notes ?? ''));
-            } catch (\Throwable $e) {
-                Log::error('Failed to queue SellerApprovedMail: '.$e->getMessage());
-            }
+        // mark application as approved
+        $app->status = 'approved';
+        $app->approved_at = now();
+        $app->save();
+
+        // create password reset token for this user (so they can set password)
+        /** @var \Illuminate\Auth\Passwords\PasswordBroker $broker */
+        $broker = Password::broker(); // default broker
+        $token = $broker->createToken($user);
+
+        // Build a frontend URL for setting password. Set this env var in your .env:
+        // NEXT_PUBLIC_APP_URL=https://app.example.com
+        $frontend = rtrim(env('NEXT_PUBLIC_APP_URL', config('app.url')), '/');
+        $setPasswordUrl = $frontend . '/seller/set-password?token=' . urlencode($token) . '&email=' . urlencode($user->email);
+
+        // send mail (queue or sync)
+       try {
+    // try to queue the mailable (non-blocking)
+         Mail::to($user->email)->queue(new SellerApprovedMail($user, $setPasswordUrl, $sellerType));
+         } catch (\Throwable $e) {
+    // if queueing failed for some reason, try to send synchronously as a safe fallback
+           try {
+            Mail::to($user->email)->send(new SellerApprovedMail($user, $setPasswordUrl, $sellerType));
+           } catch (\Throwable $e2) {
+             Log::error('Failed to send seller approved mail (queue & sync failed): '.$e2->getMessage(), [
+            'user_id' => $user->id,
+            'application_id' => $app->id,
+          ]);}
+            // Continue — we still return success but notify admin to retry mail if needed
         }
 
-        // optional: notify admin
-        try {
-            $adminEmail = config('mail.admin_email') ?? env('MAIL_ADMIN_EMAIL');
-            if ($adminEmail && class_exists(\App\Mail\NewSellerCreatedToAdmin::class)) {
-                Mail::to($adminEmail)->queue(new \App\Mail\NewSellerCreatedToAdmin($seller));
-            }
-        } catch (\Throwable $e) {
-            Log::error('Failed to queue NewSellerCreatedToAdmin: '.$e->getMessage());
+        // mark verified time for long_term sellers (optional)
+        if ($sellerType === 'long_term') {
+            $user->seller_verified_at = now();
+            $user->save();
         }
 
         return response()->json([
-            'message' => 'Application approved and seller created',
-            'seller' => $seller,
-            'user_created' => $createdUser ? ['id' => $createdUser->id, 'email' => $createdUser->email] : null,
-            'application' => $application->fresh(),
+            'message' => 'Application approved and invitation sent',
+            'user_id' => $user->id,
+            'application_id' => $app->id,
         ], 200);
     }
-}
+    }
+

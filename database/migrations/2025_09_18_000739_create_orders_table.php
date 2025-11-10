@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->string('shipping_address')->nullable();
             $table->integer('quantity')->default(1);
             $table->decimal('total', 10, 2)->default(0);
-            $table->text('message')->nullable();
+            $table->text('notes')->nullable();
             $table->enum('status',['new','pending','contacted','completed','cancelled'])->default('new');
             $table->json('metadata')->nullable();
             $table->timestamps();

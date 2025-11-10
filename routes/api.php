@@ -14,6 +14,10 @@ use App\Http\Controllers\Api\Admin\SellerController as AdminSellerController;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\Api\Admin\AdminSellerApplicationController;
+use App\Http\Controllers\Api\V1\SellerOrdersController;
+use App\Http\Controllers\Api\V1\SellerProductController;
+use App\Http\Middleware\EnsureUserIsAdminOrSeller;
+use App\Http\Controllers\Api\Admin\AdminNotificationController;
 
 Route::prefix('v1')->group(function() {
     // public
@@ -53,5 +57,20 @@ Route::prefix('v1')->group(function() {
         Route::patch('orders/{id}', [AdminOrderController::class,'update']);
         Route::get('sellers', [AdminSellerController::class,'index']);
         Route::post('sellers/{id}/approve', [AdminSellerController::class,'approve']);
+        Route::get('notifications', [AdminNotificationController::class, 'index']);
+        Route::post('notifications/mark-read', [AdminNotificationController::class, 'markAllRead']);
+        Route::post('notifications/{id}/mark-read', [AdminNotificationController::class, 'markRead']);
+        Route::get('notifications/count', [AdminNotificationController::class, 'unreadCount']);
+    });
+
+    // --- Seller routes (requires sanctum token + seller middleware) ---
+    Route::middleware(['auth:sanctum', 'is_seller'])->prefix('seller')->group(function () {
+        // seller's own dashboard endpoints
+        // Route::get('me', [\App\Http\Controllers\Api\V1\SellerDashboardController::class, 'me']);
+        Route::get('orders', [SellerOrdersController::class, 'index']);
+        Route::get('orders/{order}', [SellerOrdersController::class, 'show']);
+        Route::get('products', [SellerProductController::class, 'index']);
+        Route::post('products', [SellerProductController::class, 'store']);
+        Route::patch('products/{product}', [SellerProductController::class, 'update']);
     });
 });

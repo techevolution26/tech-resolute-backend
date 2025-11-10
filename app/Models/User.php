@@ -23,7 +23,11 @@ class User extends Authenticatable
         'email',
         'password',
         'is admin',
-        'is_seller'
+        'is_seller',
+        'seller_type',
+        'seller_verified_at',
+        'seller_application_id',
+        'profile_image',
     ];
 
     /**
