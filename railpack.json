@@ -21,12 +21,12 @@
                 "install-php-extensions exif gd zip || true",
                 "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer || true",
                 "chmod +x /usr/local/bin/composer || true",
-                "composer --version || true"
+                "/usr/local/bin/composer --version || true"
             ]
         },
         "install": {
             "commands": [
-                "composer install --optimize-autoloader --no-scripts --no-interaction"
+                "php /usr/local/bin/composer install --optimize-autoloader --no-scripts --no-interaction"
             ]
         }
     },
