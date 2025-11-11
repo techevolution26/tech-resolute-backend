@@ -1,0 +1,10 @@
+{
+  "$schema": "https://railway.com/railpack.schema.json",
+  "image": "php:8.4-fpm-bookworm",
+  "install": [
+    "apt-get update && apt-get install -y --no-install-recommends libzip-dev unzip zip git libonig-dev libxml2-dev libpng-dev libjpeg-dev libfreetype6-dev && rm -rf /var/lib/apt/lists/*",
+    "docker-php-ext-configure gd --with-jpeg --with-freetype || true",
+    "docker-php-ext-install -j$(nproc) pdo pdo_mysql mbstring exif xml zip gd || true",
+    "ln -s /usr/bin/composer /usr/local/bin/composer || true"
+  ]
+}
