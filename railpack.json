@@ -1,8 +1,5 @@
 {
     "$schema": "https://schema.railpack.com",
-    "packages": {
-        "php": "8.4"
-    },
     "buildAptPackages": [
         "libzip-dev",
         "unzip",
@@ -24,7 +21,6 @@
         },
         "install": {
             "commands": [
-                "install-php-extensions ctype curl dom fileinfo filter hash mbstring openssl pcre pdo session tokenizer xml || true",
                 "composer install --optimize-autoloader --no-scripts --no-interaction"
             ]
         }
