@@ -18,12 +18,13 @@
         "prepare": {
             "commands": [
                 "mkdir -p /usr/local/etc/php/conf.d",
-                "mkdir -p /conf.d/"
+                "mkdir -p /conf.d/",
+                "install-php-extensions exif gd zip || true"
             ]
         },
         "install": {
             "commands": [
-                "install-php-extensions ctype curl dom fileinfo filter hash mbstring openssl pcre pdo session tokenizer xml exif gd zip || true",
+                "install-php-extensions ctype curl dom fileinfo filter hash mbstring openssl pcre pdo session tokenizer xml || true",
                 "composer install --optimize-autoloader --no-scripts --no-interaction"
             ]
         }
