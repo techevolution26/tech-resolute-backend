@@ -1,10 +1,11 @@
 {
     "$schema": "https://schema.railpack.com",
     "buildAptPackages": [
-        "libzip-dev",
+        "ca-certificates",
+        "curl",
         "unzip",
-        "zip",
         "git",
+        "libzip-dev",
         "libonig-dev",
         "libxml2-dev",
         "libpng-dev",
@@ -16,7 +17,11 @@
             "commands": [
                 "mkdir -p /usr/local/etc/php/conf.d",
                 "mkdir -p /conf.d/",
-                "install-php-extensions exif gd zip || true"
+                "apt-get update || true",
+                "install-php-extensions exif gd zip || true",
+                "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer || true",
+                "chmod +x /usr/local/bin/composer || true",
+                "composer --version || true"
             ]
         },
         "install": {
@@ -27,7 +32,7 @@
     },
     "deploy": {
         "base": {
-            "image": "dunglas/frankenphp:php8.4.14-bookworm"
+            "image": "dunglas/frankenphp:php8.3.27-bookworm"
         },
         "startCommand": "./start-container.sh"
     }
