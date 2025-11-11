@@ -32,7 +32,7 @@ WORKDIR /var/www/html
 
 # Copying package files and install
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
 
 # Copy app (so build scripts can import resources) and build assets
 # If your build needs other files, copy them as well (e.g., webpack.mix.js, tailwind config, resources)
