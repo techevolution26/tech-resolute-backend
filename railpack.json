@@ -15,15 +15,22 @@
         "libfreetype6-dev"
     ],
     "steps": {
+        "prepare": {
+            "commands": [
+                "mkdir -p /usr/local/etc/php/conf.d",
+                "mkdir -p /conf.d/"
+            ]
+        },
         "install": {
             "commands": [
+                "install-php-extensions ctype curl dom fileinfo filter hash mbstring openssl pcre pdo session tokenizer xml exif gd zip || true",
                 "composer install --optimize-autoloader --no-scripts --no-interaction"
             ]
         }
     },
     "deploy": {
         "base": {
-            "image": "dunglas/frankenphp:php8.4-bookworm"
+            "image": "dunglas/frankenphp:php8.4.14-bookworm"
         },
         "startCommand": "./start-container.sh"
     }
