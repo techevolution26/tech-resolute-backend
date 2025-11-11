@@ -1,0 +1,30 @@
+{
+    "$schema": "https://schema.railpack.com",
+    "packages": {
+        "php": "8.4"
+    },
+    "buildAptPackages": [
+        "libzip-dev",
+        "unzip",
+        "zip",
+        "git",
+        "libonig-dev",
+        "libxml2-dev",
+        "libpng-dev",
+        "libjpeg-dev",
+        "libfreetype6-dev"
+    ],
+    "steps": {
+        "install": {
+            "commands": [
+                "composer install --optimize-autoloader --no-scripts --no-interaction"
+            ]
+        }
+    },
+    "deploy": {
+        "base": {
+            "image": "dunglas/frankenphp:php8.4-bookworm"
+        },
+        "startCommand": "./start-container.sh"
+    }
+}
