@@ -1,20 +1,20 @@
-# Dockerfile — Laravel-ready, PHP 8.3, exif + gd + zip installed
-# Base image for runtime
+# Dockerfile — fixed: using official node image for the node build stage
+
 FROM php:8.3-fpm-bookworm AS base
 
-# System packages and build deps
+# System packages and build deps minimal; for compiling extensions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg2 git unzip zip libzip-dev libonig-dev libxml2-dev \
+    ca-certificates curl git unzip zip libzip-dev libonig-dev libxml2-dev \
     libpng-dev libjpeg-dev libfreetype6-dev build-essential pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure and install PHP extensions we need
+# Configure and install PHP extensions
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install -j"$(nproc)" pdo pdo_mysql mbstring exif xml zip gd \
     && pecl channel-update pecl.php.net || true
 
-# Composer in image
+# Install Composer (official)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
@@ -22,44 +22,43 @@ WORKDIR /var/www/html
 # Copy composer files first to leverage layer cache
 COPY composer.json composer.lock ./
 
-# Install PHP deps (no dev) before app code
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts || true
+# Install PHP deps (no dev in production)
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
-# Build stage for assets (node)
-FROM base as nodebuilder
-
-# Install node (use official Node binary)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get update && apt-get install -y nodejs npm \
-    && npm -v || true
+# Node build stage
+FROM node:22-bullseye-slim AS nodebuilder
 
 WORKDIR /var/www/html
-COPY package.json package-lock.json* ./
-RUN npm ci --legacy-peer-deps || npm install --no-audit --no-fund
+
+# Copying package files and install
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy app (so build scripts can import resources) and build assets
+# If your build needs other files, copy them as well (e.g., webpack.mix.js, tailwind config, resources)
+COPY . .
 RUN npm run build || true
 
-# Final image: copy app code and artifacts
-FROM base
+# Final image
+FROM base AS final
 
 WORKDIR /var/www/html
 
-# Copy PHP vendor artifacts (we installed earlier in base)
+# Copy vendor from base stage (composer already ran in base)
 COPY --from=base /var/www/html/vendor ./vendor
 
-# Copy node build artifacts
-COPY --from=nodebuilder /var/www/html/node_modules ./node_modules
+# Copy node build artifacts and node_modules (if you need them in runtime)
 COPY --from=nodebuilder /var/www/html/public ./public
+COPY --from=nodebuilder /var/www/html/node_modules ./node_modules
 
-# Copy application
+# Copy the rest of the application
 COPY . .
 
-# Ensure storage directories exist and writable
+# Ensure storage directories exist and are writable
 RUN mkdir -p storage/framework/{sessions,views,cache,testing} storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache public \
     && chmod -R ug+rw storage bootstrap/cache
 
-# Expose port used by php-fpm (if Railway expects http via Caddy / Caddyfile, adapt accordingly)
 EXPOSE 9000
 
-# Default command — use php-fpm; Railway can run its start script if you have one
 CMD ["php-fpm"]
