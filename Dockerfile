@@ -1,8 +1,7 @@
-# Dockerfile — fixed: using official node image for the node build stage
-
+# Dockerfile — php-fpm + nginx (multi-stage)
 FROM php:8.3-fpm-bookworm AS base
 
-# System packages and build deps minimal; for compiling extensions
+# System packages and build deps (for extensions + composer)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates curl git unzip zip libzip-dev libonig-dev libxml2-dev \
@@ -19,7 +18,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy composer files first to leverage layer cache
+# Copy composer files first to leverage cache
 COPY composer.json composer.lock ./
 
 # Install PHP deps (no dev in production)
@@ -27,38 +26,51 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 
 # Node build stage
 FROM node:22-bullseye-slim AS nodebuilder
-
 WORKDIR /var/www/html
 
-# Copying package files and install
+# copy package files and install (fallback if no lockfile)
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
 
-# Copy app (so build scripts can import resources) and build assets
-# If your build needs other files, copy them as well (e.g., webpack.mix.js, tailwind config, resources)
+# copy app and build assets
 COPY . .
 RUN npm run build || true
 
-# Final image
+# Final image: php-fpm + nginx
 FROM base AS final
+
+# install nginx and gettext (envsubst available via gettext-base)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx gettext-base \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /var/www/html
 
-# Copy vendor from base stage (composer already ran in base)
+# copy php vendor from base stage
 COPY --from=base /var/www/html/vendor ./vendor
 
-# Copy node build artifacts and node_modules (if you need them in runtime)
+# copy built frontend artifacts from nodebuilder
 COPY --from=nodebuilder /var/www/html/public ./public
 COPY --from=nodebuilder /var/www/html/node_modules ./node_modules
 
-# Copy the rest of the application
+# copy app code
 COPY . .
 
-# Ensure storage directories exist and are writable
+# place nginx config template (we'll envsubst $PORT at startup)
+RUN mkdir -p /etc/nginx/conf.d
+COPY docker/nginx/default.conf.template /etc/nginx/conf.d/default.conf.template
+
+# make start script
+COPY docker/start.sh /start.sh
+RUN chmod +x /start.sh
+
+# ensure storage directories exist and are writable
 RUN mkdir -p storage/framework/{sessions,views,cache,testing} storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache public \
     && chmod -R ug+rw storage bootstrap/cache
 
-EXPOSE 9000
+# expose HTTP port (Railway will use it)
+EXPOSE 80
 
-CMD ["php-fpm"]
+# start script will run php-fpm (daemonize) then start nginx in foreground
+CMD ["/start.sh"]
