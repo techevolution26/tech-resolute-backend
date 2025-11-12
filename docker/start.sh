@@ -1,21 +1,29 @@
 #!/bin/sh
 set -e
 
-# Railway usually injects PORT (HTTP). Use 9000 default to match Railway UI if missing.
+# Railway usually injects PORT (HTTP). Default to 9000 if not provided.
 : "${PORT:=9000}"
 # internal php-fpm port (avoid Railway's HTTP port)
 : "${PHP_FPM_PORT:=9001}"
 
+# Export so envsubst (which reads from environment) can see them
+export PORT
+export PHP_FPM_PORT
+
 echo ">>> STARTUP: PORT=${PORT}, PHP_FPM_PORT=${PHP_FPM_PORT}"
 
-# Update php-fpm listen address in www.conf to 127.0.0.1:PHP_FPM_PORT
-if [ -f /usr/local/etc/php-fpm.d/www.conf ]; then
-  sed -ri "s#^listen\s*=.*#listen = 127.0.0.1:${PHP_FPM_PORT}#g" /usr/local/etc/php-fpm.d/www.conf || true
-  echo ">>> patched /usr/local/etc/php-fpm.d/www.conf listen to 127.0.0.1:${PHP_FPM_PORT}"
-fi
+# Robustly update php-fpm listen address in pool config(s)
+# Replace any 'listen = ...' occurrence in common pool config paths.
+for f in /usr/local/etc/php-fpm.d/*.conf /etc/php/*/fpm/pool.d/*.conf; do
+  if [ -f "$f" ]; then
+    sed -ri "s#listen\s*=.*#listen = 127.0.0.1:${PHP_FPM_PORT}#g" "$f" || true
+    echo ">>> patched $f listen to 127.0.0.1:${PHP_FPM_PORT}"
+  fi
+done
 
-# Substitute PORT and PHP_FPM_PORT into nginx config
-envsubst '\$PORT \$PHP_FPM_PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
+# Substitute PORT and PHP_FPM_PORT into nginx config template (envsubst uses exported vars)
+envsubst < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
+
 echo ">>> generated /etc/nginx/conf.d/default.conf:"
 cat /etc/nginx/conf.d/default.conf
 
