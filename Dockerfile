@@ -6,7 +6,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates curl git unzip zip libzip-dev libonig-dev libxml2-dev \
     libpng-dev libjpeg-dev libfreetype6-dev build-essential pkg-config \
+    iproute2 procps \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Configure and install PHP extensions
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
