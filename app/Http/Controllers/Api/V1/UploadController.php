@@ -1,14 +1,15 @@
 <?php
+
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use Aws\S3\S3Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Aws\S3\S3Client;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
 
-class UploadController extends Controller {
+class UploadController extends Controller
+{
     // public function presign( Request $r ) {
     //     $r->validate( [
     //         'filename' => 'required|string',
@@ -42,44 +43,56 @@ class UploadController extends Controller {
     //     return response()->json( [ 'url' => $presignedUrl, 'key' => $key, 'publicUrl' => $publicUrl ] );
     // }
 
-public function store(Request $request)
-{
-    $request->validate([
-        'file' => 'required|file|mimes:jpg,jpeg,png,gif,webp,avif|max:5120'
-    ]);
-
-    try {
-        $file = $request->file('file');
-
-        // sanitize original name and generate a random prefix
-        $safeOriginal = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $file->getClientOriginalName());
-        $filename = Str::random(10) . '_' . $safeOriginal;
-
-        // store on the "public" disk under uploads/ and ensure visibility
-        // storeAs returns the stored path (e.g. "uploads/xxxxx.jpg")
-        $path = $file->storeAs('uploads', $filename, 'public');
-
-        // public path from disk (usually "/storage/uploads/xxx")
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
-        $disk = Storage::disk('public');
-        $publicPath = $disk->url($path);
-
-        // absolute URL (uses app.url config)
-        $absoluteUrl = rtrim(config('app.url') ?? url('/'), '/') . $publicPath;
-
-        // Optionally: return the storage key/path too
-        return response()->json([
-            'key' => $path,
-            'publicUrl' => $publicPath,
-            'url' => $absoluteUrl,
-        ], 201);
-
-    } catch (\Throwable $e) {
-        Log::error('Upload failed: '.$e->getMessage(), [
-            'exception' => $e
+    public function store(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:jpg,jpeg,png,gif,webp,avif|max:5120',
         ]);
-        return response()->json(['message' => 'Upload failed'], 500);
-    }
-}
 
+        try {
+            $file = $request->file('file');
+
+            // sanitize original name and generate a random prefix
+            $safeOriginal = preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $file->getClientOriginalName());
+            $filename = \Illuminate\Support\Str::random(10).'_'.$safeOriginal;
+
+            // store on the "public" disk under uploads/
+            $path = $file->storeAs('uploads', $filename, 'public');
+
+            // public path from disk ("/storage/uploads/xxx.jpg")
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            $publicPath = $disk->url($path);
+
+            // Build an absolute URL in a robust way:
+            // 1) Prefer APP_URL (config('app.url')) if explicitly set to a non-localhost host
+            // 2) Fallback to the current request host/scheme
+            $appUrl = config('app.url');
+            $appUrl = is_string($appUrl) && $appUrl !== '' ? rtrim($appUrl, '/') : null;
+
+            // detect "bad" appUrl (localhost, 127.0.0.1) and ignore
+            if ($appUrl && preg_match('/^(https?:\/\/)(localhost|127\.0\.0\.1|::1)(:\d+)?$/i', $appUrl)) {
+                $appUrl = null;
+            }
+
+            if (! $appUrl) {
+                // fallback to the incoming request's host and scheme
+                $appUrl = rtrim($request->getSchemeAndHttpHost(), '/'); // e.g. https://your-backend-host
+            }
+
+            $absoluteUrl = $appUrl.$publicPath;
+
+            return response()->json([
+                'key' => $path,
+                'publicUrl' => $publicPath, // relative path - useful for frontends
+                'url' => $absoluteUrl,      // absolute URL built from APP_URL or request host
+            ], 201);
+
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Upload failed: '.$e->getMessage(), [
+                'exception' => $e,
+            ]);
+
+            return response()->json(['message' => 'Upload failed'], 500);
+        }
+    }
 }
